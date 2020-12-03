@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import subprocess, time, re, socket, argparse, os, asyncio, sys
+import urllib
+import socket
 import geoip2.database
 from IPy import IP
 from prometheus_client import Counter, start_http_server, Gauge
@@ -8,6 +10,18 @@ metric_labels = ['src_pod', 'src_user', 'src_org', 'dst_ip', 'dst_proto', 'dst_c
 
 geo_reader = geoip2.database.Reader('/opt/GeoLite2-Country.mmdb')
 
+
+host_name = os.environ.get('HOSTNAME')
+if host_name is None:
+    host_name = socket.gethostname()
+src_pod = host_name
+try:
+    host_name = urllib.parse.unquote(host_name.replace('-', '%')).partition('%')[2].rpartition('%')[0]
+    (src_user, _, src_org) = host_name.partition('@')
+except Exception as e:
+    src_user = 'Unknown'
+    src_org = 'Unknown'
+    
 # Helper for building regex.
 def re_param(name, pattern):
     return f'(?P<{name}>{pattern})'
@@ -39,9 +53,9 @@ def parse_packet(line):
         country = 'Unknown'
         continent = 'Unknown'
     labels = {
-        'src_pod': 'dummy_pod', # TODO
-        'src_user': 'dummy_user', # TODO
-        'src_org': 'dummy_org', # TODO
+        'src_pod': src_pod,
+        'src_user': src_user,
+        'src_org': src_org,
         'dst_ip': dst_ip,
         'dst_proto': m.group('proto').lower() + '/' + m.group('dstp'),
         'dst_country': country,

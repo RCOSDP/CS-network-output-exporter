@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 import subprocess, time, re, socket, argparse, os, asyncio, sys
+import geoip2.database
+from IPy import IP
 from prometheus_client import Counter, start_http_server, Gauge
 
-metric_labels = ['src_pod', 'src_user', 'src_org', 'dst_ip', 'dst_proto', 'dst_country']
+metric_labels = ['src_pod', 'src_user', 'src_org', 'dst_ip', 'dst_proto', 'dst_country', 'dst_continent']
 
-# Given an IP or FQDN, extract the domain name to be used as server/client.
-def extract_domain(string):
-    parts = string.split('.')
-    l = len(parts)
-    if l == 4 and all(p.isnumeric() for p in parts): return string # IP Address
-    return '.'.join(parts[l-2:]) if l > 2 else string
+geo_reader = geoip2.database.Reader('/opt/GeoLite2-Country.mmdb')
 
 # Helper for building regex.
 def re_param(name, pattern):
@@ -29,40 +26,53 @@ dump_matcher = re.compile(pattern)
 def parse_packet(line):
     m = dump_matcher.match(line)
     if not m:
-        print('[SKIP] ' + line.replace("\n", "\t"))
         return
     metric_labels = ['src_pod', 'src_user', 'src_org', 'dst_ip', 'dst_proto', 'dst_country']
+    dst_ip = m.group('dst')
+    if IP(dst_ip).iptype() != 'PUBLIC':
+        return
+    try:
+        geo_response = geo_reader.country(dst_ip)
+        country = geo_response.country.name
+        continent = geo_response.continent.name
+    except Exception as e:
+        country = 'Unknown'
+        continent = 'Unknown'
     labels = {
         'src_pod': 'dummy_pod', # TODO
         'src_user': 'dummy_user', # TODO
         'src_org': 'dummy_org', # TODO
-        'dst_ip': extract_domain(m.group('dst')),
+        'dst_ip': dst_ip,
         'dst_proto': m.group('proto').lower() + '/' + m.group('dstp'),
-        'dst_country': 'Japan' # TODO
+        'dst_country': country,
+        'dst_continent': continent
     }
-    
     packets.labels(**labels).inc()
     throughput.labels(**labels).inc(int(m.group('length')))
-    # TODO recet gauges to zero on every minute
 
 # Run tcpdump and stream the packets out
 async def stream_packets():
     p = await asyncio.create_subprocess_exec(
         'tcpdump', '-i', opts.interface, '-v', '-n', '-l', opts.filters,
         stdout=asyncio.subprocess.PIPE)
+    start_time = time.time()
     while True:
+        if time.time() - start_time > 60:
+            packets._metrics.clear()
+            throughput._metrics.clear()
+            start_time = time.time()
         # When tcpdump is run with -v, it outputs two lines per packet;
         # readuntil ensures that each "line" is actually a parse-able string of output.
         line = await p.stdout.readuntil(b' IP ')
-        print(line)
         if len(line) <= 0:
-            print(f'No output from tcpdump... waiting.')
+            # print(f'No output from tcpdump... waiting.')
             time.sleep(1)
             continue
         try:
             parse_packet(line.decode('utf-8'))
         except BaseException as e:
-            print(f'Failed to parse line "{line}" because: {e}')
+            # print(f'Failed to parse line "{line}" because: {e}')
+            pass
 
 if __name__ == '__main__':
 
@@ -71,14 +81,14 @@ if __name__ == '__main__':
         help='The network interface to monitor.')
     parser.add_argument('--port', '-p', default=int(os.getenv('NOE_PORT', 8000)),
         help='The Prometheus metrics port.')
-    parser.add_argument('--metric_prefix', '-s', default=os.getenv('NOE_METRIC_PREFIX', 'ntm'),
+    parser.add_argument('--metric_prefix', '-s', default=os.getenv('NOE_METRIC_PREFIX', 'noe'),
         help='Metric prefix (group) for Prometheus')
     parser.add_argument('filters', nargs='?', default=os.getenv('NOE_FILTERS', ''),
         help='The TCPdump filters, e.g., "src net 192.168.1.1/24"')
     opts = parser.parse_args()
 
-    packets = Gauge(f'{opts.metric_prefix}_packets', 'Packets transferred', metric_labels)
-    throughput = Gauge(f'{opts.metric_prefix}_bytes', 'Bytes transferred', metric_labels)
+    packets = Gauge(f'{opts.metric_prefix}_packets', 'Packets transferred per minute', metric_labels)
+    throughput = Gauge(f'{opts.metric_prefix}_bytes', 'Bytes transferred per minute', metric_labels)
     
     start_http_server(int(opts.port))
     asyncio.run(stream_packets())

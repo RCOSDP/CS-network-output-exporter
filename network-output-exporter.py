@@ -45,6 +45,13 @@ def parse_packet(line):
     dst_ip = m.group('dst')
     if IP(dst_ip).iptype() != 'PUBLIC':
         return
+
+    proto = m.group('proto').lower()
+    if proto != 'icmp':
+        proto += '/' + m.group('dstp')
+    else:
+        dst_ip += '.' + m.group('dstp') # in icmp, dstp matches last part of ip
+
     try:
         geo_response = geo_reader.country(dst_ip)
         country = geo_response.country.name
@@ -52,12 +59,13 @@ def parse_packet(line):
     except Exception as e:
         country = 'Unknown'
         continent = 'Unknown'
+
     labels = {
         'src_pod': src_pod,
         'src_user': src_user,
         'src_org': src_org,
         'dst_ip': dst_ip,
-        'dst_proto': m.group('proto').lower() + '/' + m.group('dstp'),
+        'dst_proto': proto,
         'dst_country': country,
         'dst_continent': continent
     }

@@ -1,6 +1,19 @@
 ## How to use
 
+### To execute directly 
+
 ```python network-output-exporter.py -p 8070```
+
+### By docker 
+
+```
+docker build --tag network-output-exporter .
+docker run -it --rm network-output-exporter
+```
+
+## DockerHub
+
+https://hub.docker.com/r/lmeval/network_output_exporter
 
 ## Credit
 

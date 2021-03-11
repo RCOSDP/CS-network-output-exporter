@@ -100,7 +100,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--interface', '-i', default=os.getenv('NOE_INTERFACE', 'eth0'),
         help='The network interface to monitor.')
-    parser.add_argument('--port', '-p', default=int(os.getenv('NOE_PORT', 8000)),
+    parser.add_argument('--port', '-p', default=int(os.getenv('NOE_PORT', 9000)),
         help='The Prometheus metrics port.')
     parser.add_argument('--metric_prefix', '-s', default=os.getenv('NOE_METRIC_PREFIX', 'noe'),
         help='Metric prefix (group) for Prometheus')

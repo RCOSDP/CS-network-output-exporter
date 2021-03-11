@@ -75,8 +75,7 @@ def parse_packet(line):
 # Run tcpdump and stream the packets out
 async def stream_packets():
     p = await asyncio.create_subprocess_exec(
-        'tcpdump', '-i', opts.interface, '-v', '-n', '-l', opts.filters,
-        stdout=asyncio.subprocess.PIPE)
+        'tcpdump', '-i', opts.interface, '-v', '-n', stdout=asyncio.subprocess.PIPE)
     start_time = time.time()
     while True:
         if time.time() - start_time > 60:
@@ -105,8 +104,6 @@ if __name__ == '__main__':
         help='The Prometheus metrics port.')
     parser.add_argument('--metric_prefix', '-s', default=os.getenv('NOE_METRIC_PREFIX', 'noe'),
         help='Metric prefix (group) for Prometheus')
-    parser.add_argument('filters', nargs='?', default=os.getenv('NOE_FILTERS', ''),
-        help='The TCPdump filters, e.g., "src net 192.168.1.1/24"')
     opts = parser.parse_args()
 
     packets = Gauge(f'{opts.metric_prefix}_packets', 'Packets transferred per minute', metric_labels)

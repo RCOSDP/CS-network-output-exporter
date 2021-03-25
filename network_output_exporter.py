@@ -10,7 +10,6 @@ metric_labels = ['src_pod', 'src_user', 'src_org', 'dst_ip', 'dst_proto', 'dst_c
 
 geo_reader = geoip2.database.Reader('/opt/GeoLite2-Country.mmdb')
 
-
 host_name = os.environ.get('HOSTNAME')
 if host_name is None:
     host_name = socket.gethostname()
@@ -36,7 +35,7 @@ pattern = '.*' + '.*'.join([
 ]) + '.*'
 dump_matcher = re.compile(pattern)
 
-# Parse output from tcpdump and update the Prometheus counters.
+# Parse output from tcpdump and update the Prometheus metrics
 def parse_packet(line):
     m = dump_matcher.match(line)
     if not m:
@@ -73,9 +72,9 @@ def parse_packet(line):
     throughput.labels(**labels).inc(int(m.group('length')))
 
 # Run tcpdump and stream the packets out
-async def stream_packets():
+async def stream_packets(interface):
     p = await asyncio.create_subprocess_exec(
-        'tcpdump', '-i', opts.interface, '-v', '-n', stdout=asyncio.subprocess.PIPE)
+        'tcpdump', '-i', interface, '-v', '-n', '-l', stdout=asyncio.subprocess.PIPE)
     start_time = time.time()
     while True:
         if time.time() - start_time > 60:
@@ -86,7 +85,6 @@ async def stream_packets():
         # readuntil ensures that each "line" is actually a parse-able string of output.
         line = await p.stdout.readuntil(b' IP ')
         if len(line) <= 0:
-            # print(f'No output from tcpdump... waiting.')
             time.sleep(1)
             continue
         try:
@@ -95,19 +93,20 @@ async def stream_packets():
             # print(f'Failed to parse line "{line}" because: {e}')
             pass
 
-if __name__ == '__main__':
 
+
+if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--interface', '-i', default=os.getenv('NOE_INTERFACE', 'eth0'),
-        help='The network interface to monitor.')
+                        help='The network interface to monitor.')
     parser.add_argument('--port', '-p', default=int(os.getenv('NOE_PORT', 9000)),
-        help='The Prometheus metrics port.')
+                        help='The Prometheus metrics port.')
     parser.add_argument('--metric_prefix', '-s', default=os.getenv('NOE_METRIC_PREFIX', 'noe'),
-        help='Metric prefix (group) for Prometheus')
+                        help='Metric prefix (group) for Prometheus')
     opts = parser.parse_args()
 
     packets = Gauge(f'{opts.metric_prefix}_packets', 'Packets transferred per minute', metric_labels)
     throughput = Gauge(f'{opts.metric_prefix}_bytes', 'Bytes transferred per minute', metric_labels)
     
     start_http_server(int(opts.port))
-    asyncio.run(stream_packets())
+    asyncio.run(stream_packets(opts.interface))

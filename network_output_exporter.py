@@ -68,19 +68,37 @@ def parse_packet(line):
         'dst_country': country,
         'dst_continent': continent
     }
-    packets.labels(**labels).inc()
-    throughput.labels(**labels).inc(int(m.group('length')))
+    key = tuple(labels.items())
+    length = int(m.group('length'))
+
+    if key not in packet_dict:
+        packet_dict[key] = [(time.time(), length)]
+    else:
+        packet_dict[key].append((time.time(), length))
+
+def update_packet_dict(now_time):
+    global packet_dict
+    new_packet_dict = {}
+    for labels, time_len_list in packet_dict.items():
+        # Drop entries older than one minute
+        new_time_len_list = [(t, packet_len) for (t, packet_len) in time_len_list if now_time - t <= 60]
+        if len(new_time_len_list) == 0:
+            label_values = [v for (k, v) in labels]
+            packet_gauge.remove(*label_values)
+            throughput_gauge.remove(*label_values)
+        else:
+            label_dict = dict(labels)
+            new_packet_dict[labels] = new_time_len_list
+            packet_gauge.labels(**label_dict).set(len(new_time_len_list))
+            throughput_gauge.labels(**label_dict).set(sum([packet_len for (_, packet_len) in new_time_len_list]))        
+    packet_dict = new_packet_dict
 
 # Run tcpdump and stream the packets out
 async def stream_packets(interface):
     p = await asyncio.create_subprocess_exec(
         'tcpdump', '-i', interface, '-v', '-n', '-l', stdout=asyncio.subprocess.PIPE)
-    start_time = time.time()
     while True:
-        if time.time() - start_time > 60:
-            packets._metrics.clear()
-            throughput._metrics.clear()
-            start_time = time.time()
+        update_packet_dict(time.time())
         # When tcpdump is run with -v, it outputs two lines per packet;
         # readuntil ensures that each "line" is actually a parse-able string of output.
         line = await p.stdout.readuntil(b' IP ')
@@ -105,8 +123,9 @@ if __name__ == '__main__':
                         help='Metric prefix (group) for Prometheus')
     opts = parser.parse_args()
 
-    packets = Gauge(f'{opts.metric_prefix}_packets', 'Packets transferred per minute', metric_labels)
-    throughput = Gauge(f'{opts.metric_prefix}_bytes', 'Bytes transferred per minute', metric_labels)
+    packet_dict = {}
+    packet_gauge = Gauge(f'{opts.metric_prefix}_packets', 'Packets transferred per minute', metric_labels)
+    throughput_gauge = Gauge(f'{opts.metric_prefix}_bytes', 'Bytes transferred per minute', metric_labels)
     
     start_http_server(int(opts.port))
     asyncio.run(stream_packets(opts.interface))

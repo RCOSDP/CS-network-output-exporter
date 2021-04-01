@@ -42,7 +42,7 @@ def parse_packet(line):
         return
     metric_labels = ['src_pod', 'src_user', 'src_org', 'dst_ip', 'dst_proto', 'dst_country']
     dst_ip = m.group('dst')
-    if IP(dst_ip).iptype() != 'PUBLIC':
+    if not opts.capture_internal and IP(dst_ip).iptype() != 'PUBLIC':
         return
 
     proto = m.group('proto').lower()
@@ -121,6 +121,9 @@ if __name__ == '__main__':
                         help='The Prometheus metrics port.')
     parser.add_argument('--metric_prefix', '-s', default=os.getenv('NOE_METRIC_PREFIX', 'noe'),
                         help='Metric prefix (group) for Prometheus')
+    parser.add_argument('--capture_internal', '-c', action='store_true', default=os.getenv('NOE_CAPTURE_INTERNAL', 'false').lower() == 'true',
+                        help='Whether capture internal packets or not')
+
     opts = parser.parse_args()
 
     packet_dict = {}

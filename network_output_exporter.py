@@ -15,6 +15,8 @@ if host_name is None:
     host_name = socket.gethostname()
 src_pod = host_name
 try:
+    # The names of hosts are escaped by '-' instead of '%'.
+    # For example, jupyter-hoge-2dfuga-40nii-2eac-2ejp-<identifier_of_repository>-<random_string>
     host_name = urllib.parse.unquote(host_name.replace('-', '%')).partition('%')[2].rpartition('%')[0]
     (src_user, _, src_org) = host_name.partition('@')
 except Exception as e:
